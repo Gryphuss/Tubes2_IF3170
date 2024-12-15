@@ -46,13 +46,11 @@ class KNN:
 
 # Example:
 if __name__ == "__main__":
-    # data
     X_train = [[1, 2], [2, 3], [3, 3], [6, 8], [7, 9], [8, 8]]
     y_train = [0, 0, 0, 1, 1, 1]
 
     X_test = [[2, 2], [7, 7], [5, 5], [1, 2], [1,1], [1,1]]
 
-    # KNN model
     knn = KNN()
     try:
         knn.fit(X_train, y_train)

@@ -11,6 +11,68 @@ class ID3Classifier:
         self.target_column = None
         self.class_labels = None
 
+    def _entropy(self, labels):
+        label_counts = Counter(labels)
+        probabilities = np.array([count / len(labels) for count in label_counts.values()])
+        return -np.sum(probabilities * np.log2(probabilities))
+
+    def _information_gain(self, data, feature_idx, labels):
+        total_entropy = self._entropy(labels)
+        unique_values, counts = np.unique(data[:, feature_idx], return_counts=True)
+        weighted_entropy = 0
+        for value, count in zip(unique_values, counts):
+            subset = labels[data[:, feature_idx] == value]
+            weighted_entropy += (count / len(data)) * self._entropy(subset)
+        return total_entropy - weighted_entropy
+
+    def _most_common_label(self, labels):
+        return Counter(labels).most_common(1)[0][0]
+
+    def _build_tree(self, data, features, labels, depth=0):
+        if len(np.unique(labels)) == 1 or len(features) == 0 or \
+           (self.max_depth is not None and depth >= self.max_depth):
+            return self._most_common_label(labels)
+
+        gains = [self._information_gain(data, f, labels) for f in features]
+        best_feature_idx = features[np.argmax(gains)]
+
+        tree = {best_feature_idx: {}}
+        for value in np.unique(data[:, best_feature_idx]):
+            mask = data[:, best_feature_idx] == value
+            subtree = self._build_tree(data[mask], [f for f in features if f != best_feature_idx], labels[mask], depth + 1)
+            tree[best_feature_idx][value] = subtree
+        return tree
+
+    def fit(self, X, y):
+        self.feature_names = np.arange(X.shape[1])  # Use column indices as feature names
+        self.tree = self._build_tree(X, self.feature_names, y)
+        return self
+
+    def predict(self, X):
+        return np.array([self._predict_sample(sample) for sample in X])
+
+    def _predict_sample(self, sample):
+        node = self.tree
+        while isinstance(node, dict):
+            feature = list(node.keys())[0]
+
+            value = sample[feature]
+
+            if value not in node[feature]:
+                return self._probabilistic_prediction(sample)
+
+            node = node[feature][value]
+
+        return node
+
+    def _probabilistic_prediction(self, sample):
+        all_labels = self._extract_labels(self.tree)
+
+        if not all_labels:
+            return np.random.choice(self.class_labels)
+
+        return np.random.choice(all_labels)
+
     def _extract_labels(self, tree):
         labels = []
         def _extract(node):
@@ -21,100 +83,3 @@ class ID3Classifier:
                 labels.append(node)
         _extract(tree)
         return labels
-
-    def _entropy(self, labels):
-        label_counts = Counter(labels)
-        probabilities = [count / len(labels) for count in label_counts.values()]
-        return -sum(p * np.log2(p) for p in probabilities if p > 0)
-
-    def _information_gain(self, data, feature, target):
-        total_entropy = self._entropy(data[target])
-        
-        feature_entropies = []
-        for value in data[feature].unique():
-            subset = data[data[feature] == value]
-            subset_entropy = self._entropy(subset[target])
-            weight = len(subset) / len(data)
-            feature_entropies.append(weight * subset_entropy)
-        
-        return total_entropy - sum(feature_entropies)
-
-    def _most_common_label(self, labels):
-        return Counter(labels).most_common(1)[0][0]
-
-    def _build_tree(self, data, features, target, depth=0):
-        if (self.max_depth is not None and depth >= self.max_depth) or \
-           len(data[target].unique()) == 1 or \
-           len(features) == 0:
-            return self._most_common_label(data[target])
-        
-        information_gains = {f: self._information_gain(data, f, target) for f in features}
-        best_feature = max(information_gains, key=information_gains.get)
-        
-        tree = {best_feature: {}}
-        
-        for value in data[best_feature].unique():
-            subset = data[data[best_feature] == value].drop(columns=[best_feature])
-            
-            remaining_features = [f for f in features if f != best_feature]
-            subtree = self._build_tree(subset, remaining_features, target, depth + 1)
-            
-            tree[best_feature][value] = subtree
-        
-        return tree
-
-    def fit(self, X, y):
-        data = X.copy()
-        data[y.name] = y
-        
-        self.feature_names = list(X.columns)
-        self.target_column = y.name
-        
-        self.class_labels = list(y.unique())
-        
-        self.tree = self._build_tree(data, self.feature_names, self.target_column)
-        return self
-
-    def predict(self, X):
-        predictions = []
-        for _, sample in X.iterrows():
-            prediction = self._predict_sample(sample)
-            predictions.append(prediction)
-        return np.array(predictions)
-
-    def _predict_sample(self, sample):
-        node = self.tree
-        while isinstance(node, dict):
-            feature = list(node.keys())[0]
-            
-            value = sample[feature]
-            
-            if value not in node[feature]:
-                return self._probabilistic_prediction(sample)
-            
-            node = node[feature][value]
-        
-        return node
-
-    def _probabilistic_prediction(self, sample):
-        all_labels = self._extract_labels(self.tree)
-        
-        if not all_labels:
-            return np.random.choice(self.class_labels)
-        
-        return np.random.choice(all_labels)
-
-    def print_tree(self, tree=None, indent=""):
-        if tree is None:
-            tree = self.tree
-        
-        if not isinstance(tree, dict):
-            print(f"{indent}Leaf: {tree}")
-            return
-        
-        feature = list(tree.keys())[0]
-        print(f"{indent}Split on {feature}:")
-        
-        for value, subtree in tree[feature].items():
-            print(f"{indent}  - {value}:")
-            self.print_tree(subtree, indent + "    ")

@@ -22,10 +22,10 @@ class GaussianNaiveBayes:
             self.variance[cls] = X_cls.var(axis=0) 
             self.priors[cls] = X_cls.shape[0] / X.shape[0]
 
-    def _calculate_likelihood(self, x: float, mean: float, variance: float) -> float:
+    def _calculate_likelihood(self, x: np.ndarray, mean: np.ndarray, variance: np.ndarray) -> np.ndarray:
         eps = 1e-6  # To avoid division by zero
-        coeff = 1 / sqrt(2 * pi * (variance + eps))
-        exponent = exp(-((x - mean) ** 2) / (2 * (variance + eps)))
+        coeff = 1 / np.sqrt(2 * pi * (variance + eps))
+        exponent = np.exp(-((x - mean) ** 2) / (2 * (variance + eps)))
         return coeff * exponent
 
     def _calculate_posterior(self, x: np.ndarray) -> Dict[Union[int, float], float]:
